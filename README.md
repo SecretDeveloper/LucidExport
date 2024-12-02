@@ -11,7 +11,7 @@ A command-line application built with .NET to export Lucidchart diagrams as imag
 ## Prerequisites
 
 1. **.NET SDK**: Install the .NET SDK (6.0 or later). [Download here](https://dotnet.microsoft.com/download).
-2. **Lucid API Key**: Obtain your API key from [Lucid API](https://lucid.co/api).
+2. **Lucid API Key**: Obtain your API key from [Lucid API Keys](https://lucid.app/developer#/apikeys).
 3. **Environment Variable**: Set the API key in the environment variable `LUCID_API_KEY`.
 
 ### Setting the Environment Variable
