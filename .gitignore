@@ -1,0 +1,70 @@
+# Ignore build output directories
+bin/
+obj/
+out/
+
+# User-specific files
+*.user
+*.vs/
+*.suo
+
+# Logs
+*.log
+
+# IDE specific files
+.vscode/
+.idea/
+.vscode/
+*.code-workspace
+
+# macOS specific files
+.DS_Store
+
+# Windows specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux specific files
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Rider IDE files
+.idea/
+
+# DotNet Publish Artifacts
+publish/
+app.publish/
+
+# Packages
+*.nupkg
+*.snupkg
+*.nuspec
+
+# Secrets
+secrets.json
+appsettings.Development.json
+
+# Dotnet user-specific cache
+**/local.settings.json
+**/*.log
+
+# Single-file builds
+*.exe
+*.dll
+*.pdb
+*.runtimeconfig.json
+*.deps.json
+*.sh
+*.bat
+
+# Lock files
+project.lock.json
+project.fragment.lock.json
+artifacts/
