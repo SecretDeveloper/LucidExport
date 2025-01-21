@@ -1,54 +1,36 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
+﻿using System.CommandLine;
 using RestSharp;
+using System.Threading.Tasks;
 
 class LucidExporter
 {
-    static async Task Main(string[] args)
+
+    static void Main(string[] args)
     {
         try
         {
-            if (args.Length < 2 || (args[0] != "-d" && args[0] != "-g"))
+            var documentsFileOption = new Option<FileInfo?>(name: "-f", description: "A file containing a lucid document id on each line.");
+            var documentIdOption = new Option<string?>(name: "-d", description: "The document id (guid from url) of the lucid chart document you want to export.  Can be a comma delimited list.");
+            var outputFolderOption = new Option<DirectoryInfo?>(name: "-o", description: "The location to export images to.", getDefaultValue: () => new DirectoryInfo("./LucidExports"));
+
+            var rootCommand = new RootCommand("LucidChart image exporter.");
+            rootCommand.AddOption(documentsFileOption);
+            rootCommand.AddOption(documentIdOption);
+            rootCommand.AddOption(outputFolderOption);
+
+            rootCommand.SetHandler((documentsFile, documentId, outputFolder) =>
             {
-                PrintUsage();
-                return;
-            }
+                if (documentsFile != null)
+                {
+                    ProcessFile(documentsFile, outputFolder!);
+                }
+                else if (!string.IsNullOrWhiteSpace(documentId))
+                {
+                    ProcessDocument(documentId!, outputFolder!);
+                }
+            }, documentsFileOption, documentIdOption, outputFolderOption);
 
-            switch (args[0])
-            {
-                case "-d":
-                    string documentPath = args[1];
-                    if (!File.Exists(documentPath))
-                    {
-                        Console.WriteLine($"Error: The file at path '{documentPath}' does not exist.");
-                        return;
-                    }
-                    Console.WriteLine($"Processing document at: {documentPath}");
-                    await ProcessDocument(documentPath);
-                    break;
-
-                case "-g":
-                    string guidsInput = args[1];
-                    string[] guids = guidsInput.Split(',');
-                    if (guids.Length == 0)
-                    {
-                        Console.WriteLine("Error: Invalid GUIDs provided. Ensure they are valid and comma-separated.");
-                        return;
-                    }
-                    Console.WriteLine("Processing GUIDs:");
-                    foreach (var guid in guids)
-                    {
-                        await ProcessGuid(guid);
-                    }
-                    break;
-
-                default:
-                    PrintUsage();
-                    break;
-            }
+            rootCommand.Invoke(args);
         }
         catch (Exception ex)
         {
@@ -56,134 +38,119 @@ class LucidExporter
         }
     }
 
-    static void PrintUsage()
+    static void ProcessFile(FileInfo inputPath, DirectoryInfo outputFolder)
     {
-        Console.WriteLine("Usage: LucidExport -d <documentpath> | -g <guids>");
-        Console.WriteLine("Examples:");
-        Console.WriteLine("  LucidExport -d 'C:\\path\\to\\document.txt'");
-        Console.WriteLine("  LucidExport -g 'guid1, guid2, guid3'");
-    }
+        Console.WriteLine($"reading {inputPath}");
 
-    static async Task ProcessDocument(string documentPath)
-    {
-        foreach (var line in File.ReadAllLines(documentPath))
+        foreach (var line in File.ReadAllLines(inputPath.FullName))
         {
             var parts = line.Split("#"); // allow for comments in document after #
-            await ProcessGuid(parts[0]);
+            ProcessDocument(parts[0], outputFolder);
         }
     }
 
-    static async Task ProcessGuid(string guid)
+    private static void ProcessDocument(string documentID, DirectoryInfo outputFolder)
     {
-        var contentType = "image/png;dpi=256"; // Default export type
-        var exportType = "png";
-        var cropSize = "content"; // Default crop size
+        string apiKey = GetAPIKey();
+        ProcessDocument(apiKey, documentID, outputFolder, "image/png;dpi=256", "png", "content");
+    }
 
-        // Read API key from environment variable
-        string apiKey = Environment.GetEnvironmentVariable("LUCID_API_KEY") ?? "";
+    private static string GetAPIKey()
+    {
+        var apiKey = Environment.GetEnvironmentVariable("LUCID_API_KEY");
         if (string.IsNullOrEmpty(apiKey))
-        {
-            Console.WriteLine("Error: API key not found. Please set the LUCID_API_KEY environment variable.");
-            return;
-        }
+            throw new ApplicationException("Error: API key not found. Please set the LUCID_API_KEY environment variable.");
 
-        string outputFolder = "ExportedPages";
+        return apiKey;
+    }
+
+    static void ProcessDocument(string apiKey, string documentID, DirectoryInfo outputFolder, string contentType, string exportType, string cropSize)
+    {
         // Ensure output folder exists
-        Directory.CreateDirectory(outputFolder);
+        Directory.CreateDirectory(outputFolder.FullName);
 
         try
         {
             // Get document metadata
-            var metadata = await GetDocumentMetadata(guid, apiKey);
-            if (metadata == null)
+            var documentMeta = GetDocumentMetadata(documentID, apiKey);
+            if (documentMeta == null)
             {
-                Console.WriteLine($"Failed to fetch metadata for document {guid}");
+                Console.WriteLine($"Failed to fetch metadata for document {documentID}");
                 return;
             }
 
-            string documentName = metadata.title;
-            string documentFolder = outputFolder + "\\" + documentName;
+            string documentFolder = Path.Combine(outputFolder.FullName, (string)documentMeta.title);
             Directory.CreateDirectory(documentFolder);
 
-            Console.WriteLine($"Processing document {guid}, {metadata.pageCount} pages to export...");
+            var pageCount = (int)documentMeta.pages.Count;
+            Console.WriteLine($"Processing document {documentID} - {documentMeta.title} - {pageCount} pages to export...");
 
-            var pageCount = int.Parse(metadata.pageCount.ToString());
-            // Iterate over pages
-            for (int p = 1; p <= pageCount; p++)
+            Parallel.For(0, pageCount, (Action<int>)(pageIndex =>
             {
-                var pageNumber = p;
-                string exportUrl = $"https://api.lucid.co/documents/{guid}?page={pageNumber}&crop={cropSize}";
+                var pageName = documentMeta.pages[pageIndex].title;
+                string outputFile = Path.Combine(documentFolder, $"[{(pageIndex + 1).ToString("D2")}] - {pageName}.{exportType.ToLower()}");
 
-                // Export page
-                string fileName = Path.Combine(documentFolder, $"{documentName} - Page{pageNumber}.{exportType.ToLower()}");
-                var success = await DownloadPageImage(exportUrl, fileName, apiKey, contentType);
+                // Lucid API page indexing begins at 1 and not 0.
+                string pageURL = $"https://api.lucid.co/documents/{documentID}?page={pageIndex + 1}&crop={cropSize}";
+
+                var (success, errorMessage) = DownloadImageToFile(apiKey, pageURL, outputFile, contentType);
 
                 if (success)
-                    Console.WriteLine($"Exported page {pageNumber} to {fileName}");
+                    Console.WriteLine($"Exported {outputFile}");
                 else
-                    Console.WriteLine($"Failed to export page {pageNumber} for document {guid}");
-            }
+                    Console.WriteLine($"Failed to export page {pageName} for document {documentID} - {errorMessage}");
+            }));
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error processing document {guid}: {ex.Message}");
+            Console.WriteLine($"Error processing document {documentID}: {ex.Message}");
             throw;
         }
     }
 
     // Get document metadata
-    static async Task<dynamic> GetDocumentMetadata(string guid, string apiKey)
+    static dynamic? GetDocumentMetadata(string guid, string apiKey)
     {
-        string url = $"https://api.lucid.co/documents/{guid}";
+        string url = $"https://api.lucid.co/documents/{guid}/contents";
         var client = new RestClient(url);
-        var request = new RestRequest("", Method.Get);
-        request.AddHeader("accept", "application/json");
-        request.AddHeader("Lucid-Api-Version", "1");
-        request.AddHeader("authorization", $"Bearer {apiKey}");
+        RestRequest request = CreateRestRequest(apiKey);
 
-        try
-        {
-            var response = await client.GetAsync(request);
-            if (response != null && response.IsSuccessful)
-            {
-                if (response.Content == null) throw new ApplicationException($"Failed to get document metadata for {guid}");
+        var response = client.Get(request);
+        if (response is null || !response.IsSuccessful || response.Content == null) return null;
 
-                return Newtonsoft.Json.JsonConvert.DeserializeObject(response.Content);
-
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to fetch metadata: {ex.Message}");
-        }
-
-        return null;
+        return Newtonsoft.Json.JsonConvert.DeserializeObject(response.Content);
     }
 
     // Download page as an image
-    static async Task<bool> DownloadPageImage(string url, string fileName, string apiKey, string contentType)
+    static (bool success, string err) DownloadImageToFile(string apiKey, string url, string fileName, string contentType)
     {
         var client = new RestClient(url);
-        var request = new RestRequest("", Method.Get);
-        request.AddHeader("authorization", $"Bearer {apiKey}");
-        request.AddHeader("Lucid-Api-Version", "1");
+        RestRequest request = CreateRestRequest(apiKey);
         request.AddHeader("accept", $"{contentType}");
 
         try
         {
-            var response = await client.DownloadDataAsync(request);
+            var response = client.DownloadData(request);
 
-            if (response != null && response.Length > 0)
-            {
-                await File.WriteAllBytesAsync(fileName, response);
-                return true;
-            }
+            if (response is null || response.Length == 0)
+                return (false, "No response returned.");
+
+            File.WriteAllBytes(fileName, response);
+            return (true, "");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to download image: {ex.Message}");
+            return (false, $"Failed to download image: {ex.Message}");
         }
+    }
 
-        return false;
+    private static RestRequest CreateRestRequest(string apiKey)
+    {
+        var request = new RestRequest("", Method.Get);
+        request.AddHeader("accept", "application/json");
+        request.AddHeader("Lucid-Api-Version", "1");
+        request.AddHeader("authorization", $"Bearer {apiKey}");
+        return request;
     }
 }
