@@ -9,6 +9,13 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier> <!-- Adjust for your platform -->
     <SelfContained>true</SelfContained> <!-- Optional: Bundle the runtime -->
     <PublishTrimmed>true</PublishTrimmed> <!-- Optional: Trim unused parts -->
+
+    <PackageId>LucidExporter</PackageId>
+    <Description>Lucid chart image exporter console app.</Description>
+    <Version>0.0.1</Version>
+    <Authors>Gary Kenneally</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/SecretDeveloper/LucidExport</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
