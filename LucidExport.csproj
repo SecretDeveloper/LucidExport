@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier> <!-- Adjust for your platform -->
+    <RuntimeIdentifiers>win-x64;osx-x64</RuntimeIdentifiers> <!-- Adjust for your platform -->
     <SelfContained>true</SelfContained> <!-- Optional: Bundle the runtime -->
     <PublishTrimmed>true</PublishTrimmed> <!-- Optional: Trim unused parts -->
 
